@@ -131,8 +131,10 @@ def train(config):
             # 前向传播
             pitch_pred, dur_pred = model(inputs)
             
-            # 损失计算（仅使用音高损失示例）
-            loss = criterion(pitch_pred, pitch_targets)
+            # 损失计算
+            pitch_loss = criterion(pitch_pred, pitch_targets)
+            dur_loss = nn.MSELoss()(dur_pred.squeeze(), targets[:, 3].to(device))
+            loss = pitch_loss + dur_loss
             
             # 反向传播
             optimizer.zero_grad()
@@ -188,7 +190,7 @@ def generate(model: MusicTransformer,
     
     # Generate new notes
     with torch.no_grad():  # Disable gradient computation for generation
-        for _ in range(length):
+        for i in range(length):
             try:
                 # Take last 'seq_length' notes as context (or pad if too short)
                 context = current_seq[-config.seq_length:]
@@ -203,17 +205,24 @@ def generate(model: MusicTransformer,
                 # Get model predictions
                 pitch_logits, duration_logits = model(x)
                 
-                # Apply temperature scaling
-                pitch_logits = pitch_logits[:, -1, :] / temperature
-                duration_logits = duration_logits[:, -1, :] / temperature
+                # Dynamic temperature scaling based on generation progress
+                progress = i / length
+                dynamic_temp = temperature + (1.0 - temperature) * progress  # Increase temperature as generation progresses
+                pitch_logits = pitch_logits[:, -1, :] / dynamic_temp
+                duration_logits = duration_logits[:, -1, :] / dynamic_temp
                 
                 # Convert logits to probabilities
                 pitch_probs = torch.softmax(pitch_logits, dim=-1)
                 duration_probs = torch.softmax(duration_logits, dim=-1)
                 
-                # Sample from the distributions
-                pitch = torch.multinomial(pitch_probs, num_samples=1).item()
-                duration = torch.multinomial(duration_probs, num_samples=1).item()
+                # Scheduled sampling: Sometimes choose random notes for diversity
+                sample_random = np.random.random() < (0.1 + 0.9 * progress)  # More random as generation progresses
+                if sample_random:
+                    pitch = np.random.randint(0, 127)
+                    duration = np.random.uniform(0.1, 5.0)
+                else:
+                    pitch = torch.multinomial(pitch_probs, num_samples=1).item()
+                    duration = torch.multinomial(duration_probs, num_samples=1).item()
                 
                 # Create new note
                 new_note = [float(pitch), float(duration)]

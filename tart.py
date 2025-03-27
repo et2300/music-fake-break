@@ -2,12 +2,13 @@
 Music Generation Script v1.2
 功能：基于Transformer的定制化音乐生成工具
 """
+from ast import List
 import os
 import numpy as np
 import torch
+from pretty_midi import PrettyMIDI
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
-from pretty_midi import PrettyMIDI
 
 # ----------------------
 # 1. 配置参数 (按需修改)
@@ -125,6 +126,7 @@ def train(config):
         total_loss = 0.0
         for inputs, targets in dataloader:
             # 数据转换
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             inputs = inputs.float().to(device)
             pitch_targets = targets[:, 0].long().to(device)
             
@@ -201,6 +203,7 @@ def generate(model: MusicTransformer,
                 # Prepare input tensor
                 x = torch.tensor(context, dtype=torch.float32)
                 x = x.unsqueeze(0).to(device)  # Add batch dimension and move to device
+                
                 
                 # Get model predictions
                 pitch_logits, duration_logits = model(x)
